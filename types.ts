@@ -49,6 +49,13 @@ interface TokensConfig {
 	cache: TokensCacheMode;
 }
 
+export interface FixedEditorConfig {
+	enabled: boolean;
+	mouseScroll: boolean;
+	scrollUp: string;
+	scrollDown: string;
+}
+
 export interface GlanceConfig {
 	version: 2;
 	enabled: boolean;
@@ -65,6 +72,7 @@ export interface GlanceConfig {
 	context: ContextConfig;
 	cost: CostConfig;
 	tokens: TokensConfig;
+	fixedEditor: FixedEditorConfig;
 }
 
 export interface UsageTotals {

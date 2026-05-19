@@ -77,6 +77,12 @@ export function defaultConfig(): GlanceConfig {
 			display: "input-output",
 			cache: "auto",
 		},
+		fixedEditor: {
+			enabled: false,
+			mouseScroll: true,
+			scrollUp: "super+up",
+			scrollDown: "super+down",
+		},
 	};
 }
 
@@ -91,6 +97,7 @@ export function cloneConfig(config: GlanceConfig): GlanceConfig {
 		context: { ...config.context },
 		cost: { ...config.cost },
 		tokens: { ...config.tokens },
+		fixedEditor: { ...config.fixedEditor },
 	};
 }
 
@@ -198,6 +205,15 @@ function normalizeConfig(raw: unknown): GlanceConfig {
 			display: parseStringEnum(tokens.display, TOKENS_DISPLAY_MODES, defaults.tokens.display),
 			cache: parseStringEnum(tokens.cache, TOKENS_CACHE_MODES, defaults.tokens.cache),
 		},
+		fixedEditor: (() => {
+			const fe = record.fixedEditor && typeof record.fixedEditor === "object" ? (record.fixedEditor as Record<string, unknown>) : {};
+			return {
+				enabled: parseBool(fe.enabled, defaults.fixedEditor.enabled),
+				mouseScroll: parseBool(fe.mouseScroll, defaults.fixedEditor.mouseScroll),
+				scrollUp: typeof fe.scrollUp === "string" ? fe.scrollUp : defaults.fixedEditor.scrollUp,
+				scrollDown: typeof fe.scrollDown === "string" ? fe.scrollDown : defaults.fixedEditor.scrollDown,
+			};
+		})(),
 	};
 }
 

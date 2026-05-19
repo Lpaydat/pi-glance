@@ -1,6 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { visibleWidth } from "@mariozechner/pi-tui";
 import { loadConfig, saveConfig } from "./config.js";
 import { GlanceEditor } from "./editor.js";
+import { renderFixedEditorCluster } from "./fixed-editor/cluster.js";
+import { TerminalSplitCompositor } from "./fixed-editor/terminal-split.js";
 import { GlanceFooterBridge } from "./footer-bridge.js";
 import { GitRefresher } from "./git.js";
 import { showGlancePane } from "./pane.js";
@@ -22,6 +25,13 @@ export default function piGlance(pi: ExtensionAPI): void {
 	let footerBridge: GlanceFooterBridge | undefined;
 	let gitRefresher: GitRefresher | undefined;
 	let requestRender: (() => void) | undefined;
+	let currentEditor: GlanceEditor | undefined;
+	let currentTui: any = undefined;
+	let fixedEditorCompositor: TerminalSplitCompositor | null = null;
+	let fixedEditorContainer: any = null;
+	let fixedStatusContainer: any = null;
+	let fixedWidgetAbove: any = null;
+	let fixedWidgetBelow: any = null;
 
 	async function ensureConfig(): Promise<GlanceConfig> {
 		config ??= await loadConfig();
@@ -84,12 +94,110 @@ export default function piGlance(pi: ExtensionAPI): void {
 		gitRefresher = undefined;
 	}
 
+	// --- Fixed-editor compositor lifecycle ---
+
+	function findContainerWithChild(tui: any, child: any): { container: any; index: number } | null {
+		const children = Array.isArray(tui?.children) ? tui.children : [];
+		const index = children.findIndex(
+			(candidate: any) => Array.isArray(candidate?.children) && candidate.children.includes(child),
+		);
+		if (index === -1) return null;
+		return { container: children[index], index };
+	}
+
+	function teardownFixedEditorCompositor(options?: { resetExtendedKeyboardModes?: boolean }): void {
+		fixedEditorCompositor?.dispose(options);
+		fixedEditorCompositor = null;
+		fixedEditorContainer = null;
+		fixedStatusContainer = null;
+		fixedWidgetAbove = null;
+		fixedWidgetBelow = null;
+	}
+
+	function installFixedEditorCompositor(ctx: ExtensionContext, tui: any): void {
+		teardownFixedEditorCompositor();
+
+		if (!ctx.hasUI || !getConfig().fixedEditor.enabled) return;
+
+		if (!tui?.terminal || typeof tui.terminal.write !== "function") {
+			console.warn("[pi-glance] Fixed editor compositor: tui.terminal.write() not found, skipping");
+			return;
+		}
+		if (!currentEditor) {
+			console.warn("[pi-glance] Fixed editor compositor: editor not installed yet, skipping");
+			return;
+		}
+
+		const editorContainerMatch = findContainerWithChild(tui, currentEditor);
+		if (!editorContainerMatch) {
+			console.warn("[pi-glance] Fixed editor compositor: could not find editor container in TUI children");
+			return;
+		}
+
+		const tuiChildren = Array.isArray(tui.children) ? tui.children : [];
+		fixedEditorContainer = editorContainerMatch.container;
+
+		// Status container is 2 positions before editor, widget above is 1 before
+		const statusCandidate = tuiChildren[editorContainerMatch.index - 2] ?? null;
+		fixedStatusContainer =
+			statusCandidate && typeof statusCandidate.render === "function" ? statusCandidate : null;
+		fixedWidgetAbove = tuiChildren[editorContainerMatch.index - 1] ?? null;
+		fixedWidgetBelow = tuiChildren[editorContainerMatch.index + 1] ?? null;
+
+		const feConfig = getConfig().fixedEditor;
+
+		let compositor: TerminalSplitCompositor;
+		compositor = new TerminalSplitCompositor({
+			tui,
+			terminal: tui.terminal,
+			mouseScroll: feConfig.mouseScroll,
+			keyboardScrollShortcuts: {
+				up: feConfig.scrollUp,
+				down: feConfig.scrollDown,
+			},
+			renderCluster: (width: number, terminalRows: number) => {
+				const statusContainerLines = fixedStatusContainer
+					? compositor.renderHidden(fixedStatusContainer, width).filter((line: string) => visibleWidth(line) > 0)
+					: [];
+				const aboveWidgetLines = fixedWidgetAbove
+					? compositor.renderHidden(fixedWidgetAbove, width)
+					: [];
+				const belowWidgetLines = fixedWidgetBelow
+					? compositor.renderHidden(fixedWidgetBelow, width)
+					: [];
+
+				return renderFixedEditorCluster({
+					width,
+					terminalRows,
+					statusLines: [...aboveWidgetLines, ...statusContainerLines],
+					editorLines: fixedEditorContainer
+						? compositor.renderHidden(fixedEditorContainer, width)
+						: [],
+					secondaryLines: belowWidgetLines,
+				});
+			},
+		});
+
+		fixedEditorCompositor = compositor;
+		if (fixedStatusContainer?.render) compositor.hideRenderable(fixedStatusContainer);
+		if (fixedWidgetAbove?.render) compositor.hideRenderable(fixedWidgetAbove);
+		compositor.hideRenderable(fixedEditorContainer);
+		if (fixedWidgetBelow?.render) compositor.hideRenderable(fixedWidgetBelow);
+		compositor.install();
+		tui.requestRender(true);
+	}
+
+	// --- UI lifecycle ---
+
 	function clearUI(ctx: ExtensionContext): void {
 		if (!ctx.hasUI) return;
+		teardownFixedEditorCompositor();
 		clearBridge();
 		clearGitRefresher();
 		ctx.ui.setEditorComponent(undefined);
 		ctx.ui.setFooter(undefined);
+		currentEditor = undefined;
+		currentTui = undefined;
 		requestRender = undefined;
 	}
 
@@ -104,15 +212,18 @@ export default function piGlance(pi: ExtensionAPI): void {
 
 		ensureGitRefresher().schedule(true);
 		clearBridge();
+
 		ctx.ui.setFooter((tui, _theme, footerData) => {
 			requestRender = () => tui.requestRender();
+			currentTui = tui;
 			footerBridge = new GlanceFooterBridge(() => state ?? ensureState(ctx), footerData);
 			return footerBridge;
 		});
 
 		ctx.ui.setEditorComponent((tui, theme, keybindings) => {
 			requestRender = () => tui.requestRender();
-			return new GlanceEditor(
+			currentTui = tui;
+			const editor = new GlanceEditor(
 				tui,
 				theme,
 				keybindings,
@@ -123,7 +234,14 @@ export default function piGlance(pi: ExtensionAPI): void {
 					renderNow();
 				},
 			);
+			currentEditor = editor;
+			return editor;
 		});
+
+		// Install compositor immediately after editor factory runs (pi calls factories synchronously)
+		if (activeConfig.fixedEditor.enabled && currentTui && currentEditor) {
+			installFixedEditorCompositor(ctx, currentTui);
+		}
 	}
 
 	pi.registerCommand("glance", {
@@ -148,6 +266,30 @@ export default function piGlance(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("glance-fixed-editor", {
+		description: "Toggle pi-glance fixed-editor mode (pins input at bottom)",
+		handler: async (args, ctx) => {
+			const current = await ensureConfig();
+			const normalizedArgs = (args ?? "").trim().toLowerCase();
+			const mode = normalizedArgs === "on" ? true : normalizedArgs === "off" ? false : !current.fixedEditor.enabled;
+			current.fixedEditor.enabled = mode;
+			config = current;
+			await saveConfig(config);
+
+			if (mode) {
+				installInputSurface(ctx);
+				// Compositor will be installed after editor is mounted (see session_start / model_select hooks)
+				if (currentTui && currentEditor) {
+					installFixedEditorCompositor(ctx, currentTui);
+				}
+			} else {
+				teardownFixedEditorCompositor();
+			}
+			renderNow();
+			ctx.ui.notify(`pi-glance fixed-editor ${mode ? "enabled" : "disabled"}`, "info");
+		},
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		config = await loadConfig();
 		state = createInitialState(ctx, config, pi.getThinkingLevel());
@@ -163,6 +305,10 @@ export default function piGlance(pi: ExtensionAPI): void {
 		ensureState(ctx);
 		refreshReliableSnapshot(ctx, { model: true, git: true });
 		renderNow();
+		// Re-install compositor after model switch (TUI may rebuild)
+		if (getConfig().fixedEditor.enabled && currentTui && currentEditor) {
+			installFixedEditorCompositor(ctx, currentTui);
+		}
 	});
 
 	pi.on("turn_start", async (_event, ctx) => {
