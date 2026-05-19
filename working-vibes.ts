@@ -385,24 +385,25 @@ async function generateVibe(
     const modelId = config.modelSpec.slice(slashIndex + 1);
     if (provider && modelId) {
       model = extensionCtx.modelRegistry.find(provider, modelId);
+      console.debug(`[working-vibes] find(${provider}, ${modelId}) = ${model ? 'FOUND' : 'NOT FOUND'}`);
     }
   }
   
   // Fall back to current session model if configured model not found
   if (!model && extensionCtx.model) {
     model = extensionCtx.model;
-    console.debug(`[working-vibes] Configured model not found, using current session model`);
+    console.debug(`[working-vibes] falling back to session model: ${JSON.stringify(model?.id)}`);
   }
   
   if (!model) {
-    console.debug(`[working-vibes] No model available for vibe generation`);
+    console.debug(`[working-vibes] No model available`);
     return `${config.fallback}...`;
   }
   
   // Get auth
   const auth = await extensionCtx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
-    console.debug(`[working-vibes] Auth failed for ${config.modelSpec}: ${auth.error}`);
+    console.debug(`[working-vibes] Auth failed`);
     return `${config.fallback}...`;
   }
   
@@ -433,6 +434,7 @@ async function generateAndUpdate(
   prompt: string, 
   setWorkingMessage: (msg?: string) => void,
 ): Promise<void> {
+  console.debug(`[working-vibes] generateAndUpdate: mode=${config.mode} theme=${config.theme}`);
   // File mode: instant, no API call
   if (config.mode === "file") {
     updateVibeFromFile(setWorkingMessage);
@@ -459,8 +461,8 @@ async function generateAndUpdate(
       combinedSignal,
     );
     
-    // Only update if still streaming and THIS generation wasn't aborted
-    if (isStreaming && !controller.signal.aborted) {
+    // Only update if still streaming, THIS generation wasn't aborted, AND we got a real vibe (not fallback)
+    if (isStreaming && !controller.signal.aborted && vibe !== `${config.fallback}...`) {
       trackRecentVibe(vibe);
       setWorkingMessage(vibe);
     }

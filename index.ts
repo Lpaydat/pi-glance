@@ -459,7 +459,6 @@ export default function piGlance(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
-		// Vibe: refresh working message based on tool context
 		if (event.toolName && event.args) {
 			onVibeToolCall(event.toolName, event.args as Record<string, unknown>, (msg) => trySetWorkingMessage(ctx, msg));
 		}
