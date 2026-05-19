@@ -376,28 +376,33 @@ async function generateVibe(
     return `${config.fallback}...`;
   }
   
-  // Parse model spec (provider/modelId format, where modelId may contain slashes)
+  // Resolve model: try configured spec first, fall back to current session model
+  let model: ReturnType<typeof extensionCtx.modelRegistry.find> | undefined;
+  
   const slashIndex = config.modelSpec.indexOf("/");
-  if (slashIndex === -1) {
-    return `${config.fallback}...`;
-  }
-  const provider = config.modelSpec.slice(0, slashIndex);
-  const modelId = config.modelSpec.slice(slashIndex + 1);
-  if (!provider || !modelId) {
-    return `${config.fallback}...`;
+  if (slashIndex !== -1) {
+    const provider = config.modelSpec.slice(0, slashIndex);
+    const modelId = config.modelSpec.slice(slashIndex + 1);
+    if (provider && modelId) {
+      model = extensionCtx.modelRegistry.find(provider, modelId);
+    }
   }
   
-  // Resolve model from registry
-  const model = extensionCtx.modelRegistry.find(provider, modelId);
+  // Fall back to current session model if configured model not found
+  if (!model && extensionCtx.model) {
+    model = extensionCtx.model;
+    console.debug(`[working-vibes] Configured model not found, using current session model`);
+  }
+  
   if (!model) {
-    console.debug(`[working-vibes] Model not found: ${config.modelSpec}`);
+    console.debug(`[working-vibes] No model available for vibe generation`);
     return `${config.fallback}...`;
   }
   
   // Get auth
   const auth = await extensionCtx.modelRegistry.getApiKeyAndHeaders(model);
   if (!auth.ok) {
-    console.debug(`[working-vibes] Auth failed for ${provider}: ${auth.error}`);
+    console.debug(`[working-vibes] Auth failed for ${config.modelSpec}: ${auth.error}`);
     return `${config.fallback}...`;
   }
   

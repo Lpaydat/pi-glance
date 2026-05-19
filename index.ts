@@ -447,7 +447,7 @@ export default function piGlance(pi: ExtensionAPI): void {
 		onVibeBeforeAgentStart(event.prompt, (msg) => trySetWorkingMessage(ctx, msg));
 	});
 
-	pi.on("agent_start", async (_event, ctx) => {
+	pi.on("agent_start", async (_event, _ctx) => {
 		onVibeAgentStart();
 	});
 
