@@ -15,13 +15,8 @@ import {
 	onVibeAgentEnd,
 	getVibeTheme,
 	setVibeTheme,
-	getVibeModel,
-	setVibeModel,
-	getVibeMode,
-	setVibeMode,
 	hasVibeFile,
 	getVibeFileCount,
-	generateVibesBatch,
 } from "./working-vibes.js";
 import {
 	clearContextUsage,
@@ -310,21 +305,12 @@ export default function piGlance(pi: ExtensionAPI): void {
 
 	// ─── /vibe command ────────────────────────────────────────────────────
 
-	const VIBE_DEFAULT_MODEL = "openai-codex/gpt-5.4-mini";
-
-	function vibeStatus(ctx: ExtensionContext): string {
+	function vibeStatus(_ctx: ExtensionContext): string {
 		const theme = getVibeTheme();
-		const model = getVibeModel();
-		const mode = getVibeMode();
 		if (!theme) return "Vibes: off";
-		const modelLabel = model === VIBE_DEFAULT_MODEL ? "default" : model;
-		let status = `Vibe: ${theme} (${mode} mode, model: ${modelLabel})`;
-		if (mode === "file") {
-			if (hasVibeFile(theme)) {
-				status += ` — ${getVibeFileCount(theme)} vibes loaded`;
-			} else {
-				status += " — no vibe file, run /vibe generate";
-			}
+		let status = `Vibe: ${theme}`;
+		if (hasVibeFile(theme)) {
+			status += ` — ${getVibeFileCount(theme)} custom vibes loaded`;
 		}
 		return status;
 	}
@@ -338,61 +324,12 @@ export default function piGlance(pi: ExtensionAPI): void {
 	}
 
 	pi.registerCommand("vibe", {
-		description: "Set working message theme. Usage: /vibe [theme|off|mode|model|generate]",
+		description: "Set working message theme. Usage: /vibe [theme|off]",
 		handler: async (args, ctx) => {
-			const parts = (args ?? "").trim().split(/\s+/);
-			const first = parts[0]?.toLowerCase();
+			const first = (args ?? "").trim().toLowerCase();
 
 			if (!first) {
 				showVibeStatus(ctx);
-				return;
-			}
-
-			// /vibe model [spec]
-			if (first === "model") {
-				const spec = parts.slice(1).join(" ").trim();
-				if (!spec) {
-					ctx.ui.notify(`Vibe model: ${getVibeModel()}`, "info");
-				} else if (setVibeModel(spec)) {
-					ctx.ui.notify(`Vibe model set to: ${spec}`, "info");
-				} else {
-					ctx.ui.notify("Failed to save vibe model", "error");
-				}
-				return;
-			}
-
-			// /vibe mode [generate|file]
-			if (first === "mode") {
-				const modeVal = parts[1]?.toLowerCase();
-				if (!modeVal) {
-					ctx.ui.notify(`Vibe mode: ${getVibeMode()}`, "info");
-				} else if (modeVal === "random" || modeVal === "generate" || modeVal === "file") {
-					if (setVibeMode(modeVal)) {
-						ctx.ui.notify(`Vibe mode set to: ${modeVal}`, "info");
-					} else {
-						ctx.ui.notify("Failed to save vibe mode", "error");
-					}
-				} else {
-					ctx.ui.notify("Usage: /vibe mode [random|generate|file]", "error");
-				}
-				return;
-			}
-
-			// /vibe generate <theme> [count]
-			if (first === "generate") {
-				const theme = parts[1];
-				const count = parseInt(parts[2] ?? "100", 10);
-				if (!theme) {
-					ctx.ui.notify("Usage: /vibe generate <theme> [count]", "error");
-					return;
-				}
-				ctx.ui.notify(`Generating ${count} vibes for "${theme}"...`, "info");
-				const result = await generateVibesBatch(theme, count);
-				if (result.success) {
-					ctx.ui.notify(`Generated ${result.count} vibes → ${result.filePath}`, "info");
-				} else {
-					ctx.ui.notify(`Failed: ${result.error}`, "error");
-				}
 				return;
 			}
 
@@ -408,11 +345,8 @@ export default function piGlance(pi: ExtensionAPI): void {
 
 			// /vibe <theme>
 			const theme = args!.trim();
-			const suffix = getVibeMode() === "file" && !hasVibeFile(theme)
-				? ` (no file — run /vibe generate ${theme})`
-				: "";
 			if (setVibeTheme(theme)) {
-				ctx.ui.notify(`Vibe set to: ${theme}${suffix}`, "info");
+				ctx.ui.notify(`Vibe set to: ${theme}`, "info");
 			} else {
 				ctx.ui.notify("Failed to set vibe theme", "error");
 			}
