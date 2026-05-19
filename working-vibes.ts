@@ -223,6 +223,7 @@ let extensionCtx: ExtensionContext | null = null;
 let currentGeneration: AbortController | null = null;
 let isStreaming = false;
 let lastVibeTime = 0;
+let nextRefreshMs = 4000 + Math.random() * 4000; // random 4-8s
 
 // Random mode state
 let randomIndex = 0;
@@ -595,7 +596,7 @@ export function onVibeToolCall(
   if (!config.theme || !extensionCtx || !isStreaming) return;
 
   const now = Date.now();
-  if (now - lastVibeTime < config.refreshInterval) return;
+  if (now - lastVibeTime < nextRefreshMs) return;
 
   let hint: string;
   if (agentContext && agentContext.length > 10) {
@@ -609,6 +610,7 @@ export function onVibeToolCall(
   }
 
   lastVibeTime = now;
+  nextRefreshMs = 4000 + Math.random() * 4000; // random 4-8s until next refresh
   generateAndUpdate(hint, setWorkingMessage);
 }
 
