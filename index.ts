@@ -328,6 +328,15 @@ export default function piGlance(pi: ExtensionAPI): void {
 
 	pi.registerCommand("vibe", {
 		description: "Set working message theme. Usage: /vibe [theme|off]",
+		getArgumentCompletions: (prefix: string) => {
+			const themes = getAvailableThemes();
+			const items = [
+				...themes.map(t => ({ value: t, label: t })),
+				{ value: "off", label: "off" },
+			];
+			const filtered = items.filter(i => i.value.toLowerCase().startsWith(prefix.toLowerCase()));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
 			const first = (args ?? "").trim().toLowerCase();
 
