@@ -42,7 +42,7 @@ interface VibeConfig {
   modelSpec: string;           // default: "openai-codex/gpt-5.4-mini"
   fallback: string;            // default: "Working"
   timeout: number;             // default: 3000ms
-  refreshInterval: number;     // default: 30000ms (30s)
+  refreshInterval: number;     // default: 10000ms (10s)
   promptTemplate: string;      // template with {theme}, {task}, {exclude} placeholders
   maxLength: number;           // default: 65 chars
 }
@@ -154,7 +154,7 @@ function loadConfig(): VibeConfig {
   const refreshSeconds =
     typeof settings.workingVibeRefreshInterval === "number" && Number.isFinite(settings.workingVibeRefreshInterval)
       ? Math.max(0, settings.workingVibeRefreshInterval)
-      : 30;
+      : 10;
 
   const maxLength =
     typeof settings.workingVibeMaxLength === "number" && Number.isFinite(settings.workingVibeMaxLength)
