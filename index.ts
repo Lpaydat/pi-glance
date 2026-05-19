@@ -17,6 +17,7 @@ import {
 	setVibeTheme,
 	hasVibeFile,
 	getVibeFileCount,
+	getAvailableThemes,
 } from "./working-vibes.js";
 import {
 	clearContextUsage,
@@ -306,13 +307,15 @@ export default function piGlance(pi: ExtensionAPI): void {
 	// ─── /vibe command ────────────────────────────────────────────────────
 
 	function vibeStatus(_ctx: ExtensionContext): string {
-		const theme = getVibeTheme();
-		if (!theme) return "Vibes: off";
-		let status = `Vibe: ${theme}`;
-		if (hasVibeFile(theme)) {
-			status += ` — ${getVibeFileCount(theme)} custom vibes loaded`;
-		}
-		return status;
+		const current = getVibeTheme();
+		const themes = getAvailableThemes();
+		const active = current ? `Active: ${current}\n\n` : "";
+		const list = themes.map(t => {
+			const marker = t === current ? " ←" : "";
+			const count = hasVibeFile(t) ? ` (${getVibeFileCount(t)} custom)` : "";
+			return `  ${t}${count}${marker}`;
+		}).join("\n");
+		return `${active}Available:\n${list}\n  off`;
 	}
 
 	function showVibeStatus(ctx: ExtensionContext): void {

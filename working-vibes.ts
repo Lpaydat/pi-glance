@@ -329,3 +329,17 @@ export function onVibeAgentEnd(setWorkingMessage: (msg?: string) => void): void 
   isStreaming = false;
   setWorkingMessage(undefined);
 }
+
+export function getAvailableThemes(): string[] {
+  const builtins = Object.keys(BUILTIN_VIBES);
+  // Scan for file-based themes
+  const vibesDir = join(process.env.HOME || process.env.USERPROFILE || homedir(), ".pi", "agent", "vibes");
+  let files: string[] = [];
+  try {
+    const { readdirSync } = require("node:fs");
+    files = readdirSync(vibesDir).filter((f: string) => f.endsWith(".txt")).map((f: string) => f.replace(/\.txt$/, "").replace(/-/g, " "));
+  } catch { /* no vibes dir */ }
+  // Merge, dedupe
+  const all = [...builtins, ...files];
+  return [...new Set(all)];
+}
