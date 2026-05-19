@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { copyToClipboard, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { visibleWidth } from "@mariozechner/pi-tui";
 import { loadConfig, saveConfig } from "./config.js";
 import { GlanceEditor } from "./editor.js";
@@ -155,6 +155,8 @@ export default function piGlance(pi: ExtensionAPI): void {
 				up: feConfig.scrollUp,
 				down: feConfig.scrollDown,
 			},
+			onCopySelection: (text: string) => copyToClipboard(text),
+			getShowHardwareCursor: () => typeof tui.getShowHardwareCursor === "function" && tui.getShowHardwareCursor(),
 			renderCluster: (width: number, terminalRows: number) => {
 				const statusContainerLines = fixedStatusContainer
 					? compositor.renderHidden(fixedStatusContainer, width).filter((line: string) => visibleWidth(line) > 0)
