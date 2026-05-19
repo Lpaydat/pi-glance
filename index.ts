@@ -8,6 +8,22 @@ import { GlanceFooterBridge } from "./footer-bridge.js";
 import { GitRefresher } from "./git.js";
 import { showGlancePane } from "./pane.js";
 import {
+	initVibeManager,
+	onVibeBeforeAgentStart,
+	onVibeAgentStart,
+	onVibeToolCall,
+	onVibeAgentEnd,
+	getVibeTheme,
+	setVibeTheme,
+	getVibeModel,
+	setVibeModel,
+	getVibeMode,
+	setVibeMode,
+	hasVibeFile,
+	getVibeFileCount,
+	generateVibesBatch,
+} from "./working-vibes.js";
+import {
 	clearContextUsage,
 	computeUsageTotals,
 	createInitialState,
@@ -292,9 +308,123 @@ export default function piGlance(pi: ExtensionAPI): void {
 		},
 	});
 
+	// ─── /vibe command ────────────────────────────────────────────────────
+
+	const VIBE_DEFAULT_MODEL = "openai-codex/gpt-5.4-mini";
+
+	function vibeStatus(ctx: ExtensionContext): string {
+		const theme = getVibeTheme();
+		const model = getVibeModel();
+		const mode = getVibeMode();
+		if (!theme) return "Vibes: off";
+		const modelLabel = model === VIBE_DEFAULT_MODEL ? "default" : model;
+		let status = `Vibe: ${theme} (${mode} mode, model: ${modelLabel})`;
+		if (mode === "file") {
+			if (hasVibeFile(theme)) {
+				status += ` — ${getVibeFileCount(theme)} vibes loaded`;
+			} else {
+				status += " — no vibe file, run /vibe generate";
+			}
+		}
+		return status;
+	}
+
+	function showVibeStatus(ctx: ExtensionContext): void {
+		ctx.ui.notify(vibeStatus(ctx), "info");
+	}
+
+	function trySetWorkingMessage(ctx: ExtensionContext, msg?: string): void {
+		if (ctx.hasUI) ctx.ui.setWorkingMessage(msg);
+	}
+
+	pi.registerCommand("vibe", {
+		description: "Set working message theme. Usage: /vibe [theme|off|mode|model|generate]",
+		handler: async (args, ctx) => {
+			const parts = (args ?? "").trim().split(/\s+/);
+			const first = parts[0]?.toLowerCase();
+
+			if (!first) {
+				showVibeStatus(ctx);
+				return;
+			}
+
+			// /vibe model [spec]
+			if (first === "model") {
+				const spec = parts.slice(1).join(" ").trim();
+				if (!spec) {
+					ctx.ui.notify(`Vibe model: ${getVibeModel()}`, "info");
+				} else if (setVibeModel(spec)) {
+					ctx.ui.notify(`Vibe model set to: ${spec}`, "info");
+				} else {
+					ctx.ui.notify("Failed to save vibe model", "error");
+				}
+				return;
+			}
+
+			// /vibe mode [generate|file]
+			if (first === "mode") {
+				const modeVal = parts[1]?.toLowerCase();
+				if (!modeVal) {
+					ctx.ui.notify(`Vibe mode: ${getVibeMode()}`, "info");
+				} else if (modeVal === "generate" || modeVal === "file") {
+					if (setVibeMode(modeVal)) {
+						ctx.ui.notify(`Vibe mode set to: ${modeVal}`, "info");
+					} else {
+						ctx.ui.notify("Failed to save vibe mode", "error");
+					}
+				} else {
+					ctx.ui.notify("Usage: /vibe mode [generate|file]", "error");
+				}
+				return;
+			}
+
+			// /vibe generate <theme> [count]
+			if (first === "generate") {
+				const theme = parts[1];
+				const count = parseInt(parts[2] ?? "100", 10);
+				if (!theme) {
+					ctx.ui.notify("Usage: /vibe generate <theme> [count]", "error");
+					return;
+				}
+				ctx.ui.notify(`Generating ${count} vibes for "${theme}"...`, "info");
+				const result = await generateVibesBatch(theme, count);
+				if (result.success) {
+					ctx.ui.notify(`Generated ${result.count} vibes → ${result.filePath}`, "info");
+				} else {
+					ctx.ui.notify(`Failed: ${result.error}`, "error");
+				}
+				return;
+			}
+
+			// /vibe off
+			if (first === "off") {
+				if (setVibeTheme(null)) {
+					ctx.ui.notify("Vibes disabled", "info");
+				} else {
+					ctx.ui.notify("Failed to disable vibes", "error");
+				}
+				return;
+			}
+
+			// /vibe <theme>
+			const theme = args!.trim();
+			const suffix = getVibeMode() === "file" && !hasVibeFile(theme)
+				? ` (no file — run /vibe generate ${theme})`
+				: "";
+			if (setVibeTheme(theme)) {
+				ctx.ui.notify(`Vibe set to: ${theme}${suffix}`, "info");
+			} else {
+				ctx.ui.notify("Failed to set vibe theme", "error");
+			}
+		},
+	});
+
+	// ─── Lifecycle events ────────────────────────────────────────────────
+
 	pi.on("session_start", async (_event, ctx) => {
 		config = await loadConfig();
 		state = createInitialState(ctx, config, pi.getThinkingLevel());
+		initVibeManager(ctx);
 		installInputSurface(ctx);
 	});
 
@@ -313,11 +443,26 @@ export default function piGlance(pi: ExtensionAPI): void {
 		}
 	});
 
+	pi.on("before_agent_start", async (event, ctx) => {
+		onVibeBeforeAgentStart(event.prompt, (msg) => trySetWorkingMessage(ctx, msg));
+	});
+
+	pi.on("agent_start", async (_event, ctx) => {
+		onVibeAgentStart();
+	});
+
 	pi.on("turn_start", async (_event, ctx) => {
 		await ensureConfig();
 		ensureState(ctx);
 		refreshReliableSnapshot(ctx, { model: true });
 		renderNow();
+	});
+
+	pi.on("tool_execution_start", async (event, ctx) => {
+		// Vibe: refresh working message based on tool context
+		if (event.toolName && event.args) {
+			onVibeToolCall(event.toolName, event.args as Record<string, unknown>, (msg) => trySetWorkingMessage(ctx, msg));
+		}
 	});
 
 	pi.on("tool_execution_end", async (_event, ctx) => {
@@ -366,5 +511,6 @@ export default function piGlance(pi: ExtensionAPI): void {
 		ensureState(ctx);
 		refreshReliableSnapshot(ctx);
 		renderNow();
+		onVibeAgentEnd((msg) => trySetWorkingMessage(ctx, msg));
 	});
 }
