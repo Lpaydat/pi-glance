@@ -366,14 +366,14 @@ export default function piGlance(pi: ExtensionAPI): void {
 				const modeVal = parts[1]?.toLowerCase();
 				if (!modeVal) {
 					ctx.ui.notify(`Vibe mode: ${getVibeMode()}`, "info");
-				} else if (modeVal === "generate" || modeVal === "file") {
+				} else if (modeVal === "random" || modeVal === "generate" || modeVal === "file") {
 					if (setVibeMode(modeVal)) {
 						ctx.ui.notify(`Vibe mode set to: ${modeVal}`, "info");
 					} else {
 						ctx.ui.notify("Failed to save vibe mode", "error");
 					}
 				} else {
-					ctx.ui.notify("Usage: /vibe mode [generate|file]", "error");
+					ctx.ui.notify("Usage: /vibe mode [random|generate|file]", "error");
 				}
 				return;
 			}
